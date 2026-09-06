@@ -59,19 +59,6 @@ bool CSSColorMixValue::NormalizePercentages(
   return true;
 }
 
-Color CSSColorMixValue::Mix(const Color& color1,
-                            const Color& color2,
-                            const CSSLengthResolver& length_resolver) const {
-  double alpha_multiplier;
-  double mix_amount;
-  if (!NormalizePercentages(mix_amount, alpha_multiplier, length_resolver)) {
-    return Color();
-  }
-  return Color::FromColorMix(ColorInterpolationSpace(),
-                             HueInterpolationMethod(), color1, color2,
-                             mix_amount, alpha_multiplier);
-}
-
 bool CSSColorMixValue::Equals(const CSSColorMixValue& other) const {
   return *color1_ == *other.color1_ && *color2_ == *other.color2_ &&
          base::ValuesEquivalent(percentage1_, other.percentage1_) &&
@@ -84,38 +71,29 @@ std::pair<const CSSPrimitiveValue*, const CSSPrimitiveValue*>
 CSSColorMixValue::PercentageValuesForSerialization(
     const CSSPrimitiveValue* p1,
     const CSSPrimitiveValue* p2) {
-  if (p1) {
-    if (auto* p1_literal = DynamicTo<CSSNumericLiteralValue>(*p1)) {
-      const double p1_literal_percent = p1_literal->ComputePercentage();
-      if (p2) {
-        if (auto* p2_literal = DynamicTo<CSSNumericLiteralValue>(*p2)) {
-          const double p2_literal_percent = p2_literal->ComputePercentage();
-          if (p1_literal_percent == 50.0 && p2_literal_percent == 50.0) {
-            return {nullptr, nullptr};
-          }
-          if (p1_literal_percent + p2_literal_percent == 100.0) {
-            return {p1, nullptr};
-          }
-        }
-      } else {
-        if (p1_literal_percent == 50.0) {
-          return {nullptr, nullptr};
-        }
-      }
-    }
-    return {p1, p2};
-  }
-  if (p2) {
-    if (auto* p2_literal = DynamicTo<CSSNumericLiteralValue>(*p2)) {
-      if (p2_literal->ComputePercentage() == 50.0) {
+  const auto* p1_literal = DynamicTo<CSSNumericLiteralValue>(p1);
+  const auto* p2_literal = DynamicTo<CSSNumericLiteralValue>(p2);
+
+  if (p1_literal) {
+    const double p1_percent = p1_literal->ComputePercentage();
+    if (p1_percent == 50.0) {
+      if (!p2 || (p2_literal && p2_literal->ComputePercentage() == 50.0)) {
         return {nullptr, nullptr};
       }
-      return {p2->SubtractFrom(100.0, CSSPrimitiveValue::UnitType::kPercentage),
-              nullptr};
+    } else if (!p2) {
+      return {p1, p1->SubtractFrom(100.0,
+                                   CSSPrimitiveValue::UnitType::kPercentage)};
     }
-    return {nullptr, p2};
+  } else if (!p1 && p2_literal) {
+    const double p2_percent = p2_literal->ComputePercentage();
+    if (p2_percent == 50.0) {
+      return {nullptr, nullptr};
+    }
+    return {p2->SubtractFrom(100.0, CSSPrimitiveValue::UnitType::kPercentage),
+            p2};
   }
-  return {nullptr, nullptr};
+
+  return {p1, p2};
 }
 
 String CSSColorMixValue::CustomCSSText() const {
